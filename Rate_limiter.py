@@ -12,9 +12,18 @@ class SlidingWindow:
             return True
         else:
             return False
-b = SlidingWindow(3, 10)
-print(b.allow(0))
-print(b.allow(1))
-print(b.allow(2))
-print(b.allow(3))
-print(b.allow(10))
+class TokenBucket:
+    def __init__(self,capacity,rate):
+        self.capacity = capacity
+        self.rate = rate
+        self.tokens = capacity
+        self.last = 0
+    def allow(self,now,cost=1):
+        time_passed = now - self.last
+        new_tokens = time_passed * self.rate
+        if self.tokens+new_tokens > self.capacity :
+            self.tokens = self.capacity
+        else:
+            self.tokens += new_tokens
+        self.last = now
+        return self.tokens
