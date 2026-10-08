@@ -9,9 +9,11 @@ class SlidingWindow:
             self.timestamps.popleft()
         if len(self.timestamps)<self.limit:
             self.timestamps.append(now)
-            return True
+            remaining = self.limit - len(self.timestamps)
+            return True,remaining,0
         else:
-            return False
+            retry_after = self.timestamps[0] + self.window - now
+            return False,0,retry_after
 class TokenBucket:
     def __init__(self,capacity,rate):
         self.capacity = capacity
@@ -26,4 +28,11 @@ class TokenBucket:
         else:
             self.tokens += new_tokens
         self.last = now
-        return self.tokens
+        if self.tokens >= cost:
+            self.tokens -=cost
+            return True,self.tokens,0
+        else:
+            if cost>self.capacity:
+                return False,self.tokens,float('inf')
+            retry_after = (cost-self.tokens)/self.rate
+            return False,self.tokens,retry_after
