@@ -38,19 +38,26 @@ class TokenBucket:
             return False,self.tokens,retry_after
 
 class RateLimiter:
-    def __init__(self, limit, window):
-        self.limit = limit
-        self.window = window
+    def __init__(self, strategy, config):
+        self.strategy = strategy
+        self.config = config
         self.limiters = {}
     def allow(self,client,resource,now):
+        strategies = {"SlidingWindow": SlidingWindow, "TokenBucket": TokenBucket}
+        if self.strategy not in strategies:
+            raise ValueError("unknown strategy")
         if (client,resource) not in self.limiters:
-            self.limiters[(client,resource)] = SlidingWindow(self.limit,self.window)
+            cls = strategies[self.strategy]
+            self.limiters[(client,resource)] = cls(**self.config)
         return self.limiters[(client,resource)].allow(now)
         
-rl = RateLimiter(2, 10)
-print(rl.allow("alice", "gpt", 0))         # 1
-print(rl.allow("alice", "gpt", 1))         # 2
-print(rl.allow("alice", "gpt", 2))         # 3
-print(rl.allow("bob", "gpt", 2))           # 4
-print(rl.allow("alice", "embeddings", 2))  # 5
-print(rl.allow("alice", "gpt", 10))        # 6
+sw = RateLimiter("SlidingWindow", {"limit": 2, "window": 10})
+print(sw.allow("alice", "gpt", 0))   # predict
+print(sw.allow("alice", "gpt", 1))   # predict
+print(sw.allow("alice", "gpt", 2))   # predict
+
+tb = RateLimiter("TokenBucket", {"capacity": 2, "rate": 1})
+print(tb.allow("alice", "gpt", 0))   # predict
+print(tb.allow("alice", "gpt", 0))   # predict
+print(tb.allow("alice", "gpt", 0))   # predict
+print(tb.allow("alice", "gpt", 1))   # predict
