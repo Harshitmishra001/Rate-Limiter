@@ -36,3 +36,21 @@ class TokenBucket:
                 return False,self.tokens,float('inf')
             retry_after = (cost-self.tokens)/self.rate
             return False,self.tokens,retry_after
+
+class RateLimiter:
+    def __init__(self, limit, window):
+        self.limit = limit
+        self.window = window
+        self.limiters = {}
+    def allow(self,client,resource,now):
+        if (client,resource) not in self.limiters:
+            self.limiters[(client,resource)] = SlidingWindow(self.limit,self.window)
+        return self.limiters[(client,resource)].allow(now)
+        
+rl = RateLimiter(2, 10)
+print(rl.allow("alice", "gpt", 0))         # 1
+print(rl.allow("alice", "gpt", 1))         # 2
+print(rl.allow("alice", "gpt", 2))         # 3
+print(rl.allow("bob", "gpt", 2))           # 4
+print(rl.allow("alice", "embeddings", 2))  # 5
+print(rl.allow("alice", "gpt", 10))        # 6
