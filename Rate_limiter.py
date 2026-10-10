@@ -12,7 +12,6 @@ class SlidingWindow:
             while self.timestamps and self.timestamps[0]<=now-self.window:
                 self.timestamps.popleft()
             if len(self.timestamps)<self.limit:
-                time.sleep(0.001)
                 self.timestamps.append(now)
                 remaining = self.limit - len(self.timestamps)
                 return True,remaining,0
@@ -36,7 +35,6 @@ class TokenBucket:
                 self.tokens += new_tokens
             self.last = now
             if self.tokens >= cost:
-                time.sleep(0.001)
                 self.tokens -=cost
                 return True,self.tokens,0
             else:
@@ -51,23 +49,27 @@ class RateLimiter:
         self.config = config
         self.limiters = {}
         self.stats = {}
-    def allow(self,client,resource,now):
-        strategies = {"SlidingWindow": SlidingWindow, "TokenBucket": TokenBucket}
-        if self.strategy not in strategies:
+        self.lock = threading.Lock()
+        self.strategies = {"SlidingWindow": SlidingWindow, "TokenBucket": TokenBucket}
+        if self.strategy not in self.strategies:
             raise ValueError("unknown strategy")
-        if (client,resource) not in self.limiters:
-            cls = strategies[self.strategy]
-            self.limiters[(client,resource)] = cls(**self.config)
-        if (client,resource) not in self.stats:
-            self.stats[(client,resource)] = {"accepted":0,"rejected":0}
-        s = self.limiters[(client,resource)].allow(now)
-        if s[0] == True:
-            self.stats[(client,resource)]["accepted"] +=1
-        else:
-            self.stats[(client,resource)]["rejected"] +=1
-        return s
+    def allow(self,client,resource,now):
+        with self.lock:
+            if (client,resource) not in self.limiters:
+                cls = self.strategies[self.strategy]
+                self.limiters[(client,resource)] = cls(**self.config)
+            if (client,resource) not in self.stats:
+                self.stats[(client,resource)] = {"accepted":0,"rejected":0}
+            bouncer = self.limiters[(client,resource)]
+        s = bouncer.allow(now)
+        with self.lock:
+            if s[0] == True:
+                self.stats[(client,resource)]["accepted"] +=1
+            else:
+                self.stats[(client,resource)]["rejected"] +=1
+            return s
     def get_stats(self,client,resource):
-        return f'for {client},{resource} Accepted = {self.stats[(client,resource)]["accepted"]} and Rejected = {self.stats[(client,resource)]["rejected"]}'
+        return self.stats[(client, resource)]
     
 import threading
 sw = SlidingWindow(3,10)
@@ -90,3 +92,13 @@ for t in threads:
 for t in threads:
     t.join()
 print(sum(1 for r in results if r[0]))
+rl = RateLimiter("SlidingWindow", {"limit": 3, "window": 10})
+def worker():
+    rl.allow("alice", "gpt", 0)
+
+threads = [threading.Thread(target=worker) for _ in range(10)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+print(rl.stats[("alice", "gpt")])
